@@ -10,19 +10,26 @@ import OcrOverlay from '@/components/ai/OcrOverlay';
 import Scanner from '@/components/ai/Scanner';
 import ScanResults from '@/components/ai/ScanResults';
 import FoodPlateResults from '@/components/ai/FoodPlateResults';
+import FallbackFoodSelector, { ManualNutritionEntry } from '@/components/ai/FallbackFoodSelector';
+import { QualityIndicator, QualityWarningModal } from '@/components/ui/QualityIndicator';
 import AnimatedButton from '@/components/ui/AnimatedButton';
 import NutriGotchiLoader from '@/components/ui/NutriGotchiLoader';
 import { ArrowLeft, Camera } from 'lucide-react';
-import { VisionScanResult } from '@/types/scan';
+import { VisionScanResult, NutritionalInfo } from '@/types/scan';
 import { FoodPlateAnalysis } from '@/lib/ai/geminiClient';
+import { FoodCalorieData } from '@/lib/data/foodCalories';
 import { useFoodLogs, useAddFoodLog, useBulkAddFoodLogs } from '@/lib/hooks/useFoodLogs';
 import { useProfile } from '@/lib/hooks/useProfile';
 import { useNavbar } from '@/lib/contexts/NavbarContext';
 import { supabase } from '@/lib/supabase/client';
+import { checkImageQuality, ImageQualityResult } from '@/lib/validation/imageQualityCheck';
 
-type PageState = 'mode_select' | 'camera' | 'processing' | 'results' | 'error';
+type PageState = 'mode_select' | 'camera' | 'quality_warning' | 'processing' | 'results' | 'fallback' | 'manual_entry' | 'error';
 type ScanStage = 'idle' | 'processing_vision' | 'complete' | 'error';
 type ScanMode = 'label' | 'plate'; // Mode 1: Label Decoder | Mode 2: Warteg Scanner
+
+// Timeout for AI analysis (8 seconds)
+const AI_TIMEOUT_MS = 8000;
 
 export default function ScanPage() {
   const router = useRouter();
@@ -36,6 +43,11 @@ export default function ScanPage() {
   const [foodPlateResult, setFoodPlateResult] = useState<FoodPlateAnalysis | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
+
+  // Reliability Layer States
+  const [imageQuality, setImageQuality] = useState<ImageQualityResult | null>(null);
+  const [isCheckingQuality, setIsCheckingQuality] = useState(false);
+  const [fallbackReason, setFallbackReason] = useState<'timeout' | 'low_quality' | 'api_error'>('timeout');
 
   // Hide/show navbar based on page state
   useEffect(() => {
@@ -70,14 +82,47 @@ export default function ScanPage() {
     setScanMode(mode);
     setPageState('camera');
     setErrorMessage('');
+    setImageQuality(null);
+  };
+
+  // === LAYER 1: IMAGE QUALITY CHECK ===
+
+  const performQualityCheck = async (imageDataUrl: string, mode: 'label' | 'food_plate'): Promise<boolean> => {
+    setIsCheckingQuality(true);
+    try {
+      const quality = await checkImageQuality(imageDataUrl, mode);
+      setImageQuality(quality);
+
+      if (!quality.isAcceptable) {
+        // Show warning modal
+        setPageState('quality_warning');
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.warn('[QualityCheck] Failed, proceeding anyway:', error);
+      return true; // Don't block user on quality check failure
+    } finally {
+      setIsCheckingQuality(false);
+    }
+  };
+
+  // Proceed with processing (after quality check or user override)
+  const proceedToProcessing = () => {
+    setPageState('processing');
+    setScanStage('processing_vision');
   };
 
   // === LABEL DECODER MODE (Mode 1 - Gemini Vision) ===
 
-  const handleCaptureLabel = (imageDataUrl: string) => {
+  const handleCaptureLabel = async (imageDataUrl: string) => {
     setCapturedImage(imageDataUrl);
-    setPageState('processing');
-    setScanStage('processing_vision');
+
+    // Layer 1: Quality Check
+    const isQualityOk = await performQualityCheck(imageDataUrl, 'label');
+    if (isQualityOk) {
+      proceedToProcessing();
+    }
   };
 
   const handleVisionScanComplete = (result: VisionScanResult) => {
@@ -143,10 +188,14 @@ export default function ScanPage() {
 
   // === WARTEG SCANNER MODE (Mode 2 - Gemini Food Plate Analysis) ===
 
-  const handleCapturePlate = (imageDataUrl: string) => {
+  const handleCapturePlate = async (imageDataUrl: string) => {
     setCapturedImage(imageDataUrl);
-    setPageState('processing');
-    setScanStage('processing_vision');
+
+    // Layer 1: Quality Check
+    const isQualityOk = await performQualityCheck(imageDataUrl, 'food_plate');
+    if (isQualityOk) {
+      proceedToProcessing();
+    }
   };
 
   const handleFoodPlateAnalysisComplete = async () => {
@@ -290,6 +339,7 @@ export default function ScanPage() {
     setScanResult(null);
     setFoodPlateResult(null);
     setErrorMessage('');
+    setImageQuality(null);
   };
 
   const handleRetry = () => {
@@ -303,6 +353,139 @@ export default function ScanPage() {
 
   const handleBack = () => {
     router.push('/');
+  };
+
+  // === LAYER 5: FALLBACK HANDLERS ===
+
+  // Handle quality warning retry (go back to camera)
+  const handleQualityRetry = () => {
+    setPageState('camera');
+    setImageQuality(null);
+  };
+
+  // Handle quality warning proceed anyway
+  const handleQualityProceedAnyway = () => {
+    setFallbackReason('low_quality');
+    proceedToProcessing();
+  };
+
+  // Handle fallback food selection (from preset list)
+  const handleFallbackFoodSelect = async (food: FoodCalorieData, portion: number) => {
+    if (!userId) return;
+
+    try {
+      const finalNutrition = {
+        calories: Math.round(food.nutritionData.calories * portion),
+        protein: Number((food.nutritionData.protein * portion).toFixed(1)),
+        carbs: Number((food.nutritionData.carbs * portion).toFixed(1)),
+        fat: Number((food.nutritionData.fat * portion).toFixed(1)),
+        sugar: Number((food.nutritionData.sugar * portion).toFixed(1)),
+        sodium: Math.round(food.nutritionData.sodium * portion),
+      };
+
+      // Get session for API call
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error('Sesi berakhir. Silakan login kembali.');
+        return;
+      }
+
+      const response = await fetch('/api/food-logs/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          foodLog: {
+            food_name: food.indonesianName,
+            calories: finalNutrition.calories,
+            protein: finalNutrition.protein,
+            carbs: finalNutrition.carbs,
+            fat: finalNutrition.fat,
+            sugar: finalNutrition.sugar,
+            sodium: finalNutrition.sodium,
+            health_grade: food.healthGrade,
+            source: 'manual_preset',
+            nutrition_data: finalNutrition,
+          }
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      toast.success(data.message || 'Data makanan berhasil disimpan', { icon: '📝' });
+
+      // Invalidate caches
+      queryClient.invalidateQueries({ queryKey: ['foodLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['nutritionSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+
+      router.push('/');
+    } catch (error: any) {
+      console.error('[Fallback] Failed to save:', error);
+      toast.error(`Gagal menyimpan: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  // Handle manual nutrition entry
+  const handleManualNutritionSave = async (nutrition: NutritionalInfo, name: string) => {
+    if (!userId) return;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error('Sesi berakhir. Silakan login kembali.');
+        return;
+      }
+
+      const response = await fetch('/api/food-logs/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          foodLog: {
+            food_name: name,
+            calories: nutrition.calories,
+            protein: nutrition.protein,
+            carbs: nutrition.carbs,
+            fat: nutrition.fat,
+            sugar: nutrition.sugar || 0,
+            sodium: nutrition.sodium || 0,
+            health_grade: 'C', // Default for manual entry
+            source: 'manual_entry',
+            nutrition_data: nutrition,
+          }
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      toast.success('Data manual berhasil disimpan', { icon: '📝' });
+
+      queryClient.invalidateQueries({ queryKey: ['foodLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['nutritionSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+
+      router.push('/');
+    } catch (error: any) {
+      console.error('[Manual] Failed to save:', error);
+      toast.error(`Gagal menyimpan: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  // Open fallback mode
+  const handleOpenFallback = () => {
+    setPageState('fallback');
+  };
+
+  // Open manual entry
+  const handleOpenManualEntry = () => {
+    setPageState('manual_entry');
   };
 
   // Auto-trigger food plate analysis after capture in plate mode
@@ -492,7 +675,35 @@ export default function ScanPage() {
           />
         )}
 
-        {/* Error View */}
+        {/* Quality Warning Modal */}
+        {pageState === 'quality_warning' && imageQuality && (
+          <QualityWarningModal
+            quality={imageQuality}
+            onRetry={handleQualityRetry}
+            onProceedAnyway={handleQualityProceedAnyway}
+            onClose={handleRescan}
+          />
+        )}
+
+        {/* Fallback Food Selector */}
+        {pageState === 'fallback' && (
+          <FallbackFoodSelector
+            onSelect={handleFallbackFoodSelect}
+            onManualEntry={handleOpenManualEntry}
+            onClose={handleRescan}
+            reason={fallbackReason}
+          />
+        )}
+
+        {/* Manual Nutrition Entry */}
+        {pageState === 'manual_entry' && (
+          <ManualNutritionEntry
+            onSave={handleManualNutritionSave}
+            onClose={() => setPageState('fallback')}
+          />
+        )}
+
+        {/* Error View - with Fallback Option */}
         {pageState === 'error' && (
           <div className="min-h-screen flex items-center justify-center p-6">
             <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
@@ -509,6 +720,12 @@ export default function ScanPage() {
                   className="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-semibold transition"
                 >
                   🔄 Coba Lagi
+                </button>
+                <button
+                  onClick={handleOpenFallback}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-semibold transition"
+                >
+                  📋 Pilih dari Daftar
                 </button>
                 <button
                   onClick={handleRescan}
