@@ -136,8 +136,8 @@ export default function RecipesPage() {
           savingsVsBuyingRp: r.savings_vs_buying,
           calories: r.total_calories,
           protein: r.total_protein,
-          fat: r.total_fat || 0,       // NEW: fat mapping
-          carbs: r.total_carbs || 0,   // NEW: carbs mapping
+          fat: r.total_fat || 0,
+          carbs: r.total_carbs || 0,
           ingredients: r.missing_ingredients.map((ing: any) => ({
             name: ing.item,
             qty: ing.qty,
@@ -150,6 +150,7 @@ export default function RecipesPage() {
           recipeType: r.type, // Hemat, Balance, Premium
           exceeds_budget: r.exceeds_budget, // Budget validation
           budget_warning: r.budget_warning, // Warning message
+          validation: r.validation, // Recipe validation from API
         }));
         setRecipes(mappedRecipes);
       } else {

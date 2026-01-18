@@ -442,15 +442,32 @@ OUTPUT FORMAT (STRICT JSON ONLY, NO MARKDOWN):
 {
   "food_name": "Main dish name in Indonesian (e.g., 'Nasi Goreng Spesial')",
   "components": ["Component 1", "Component 2"],
+  "components_detailed": [
+    {
+      "name": "Component name",
+      "portion": "Portion estimate (e.g., '1 centong')",
+      "calories": number,
+      "protein_g": number,
+      "carbs_g": number,
+      "fat_g": number,
+      "confidence": number (0-100, how sure you are about this component)
+    }
+  ],
   "portion_estimate": "Visual portion description (e.g., '1 piring penuh', '2 porsi sedang')",
   "calories": number (total estimated calories),
+  "calories_confidence": number (0-100, your confidence in this estimate),
   "protein_g": number (total protein in grams),
+  "protein_confidence": number (0-100),
   "carbs_g": number (total carbohydrates in grams),
+  "carbs_confidence": number (0-100),
   "fat_g": number (total fat in grams),
+  "fat_confidence": number (0-100),
   "sugar_g": number (total sugar in grams, estimate if not explicitly visible),
   "sodium_mg": number (estimated sodium in mg, Indonesian food tends to be salty),
   "health_grade": "A" | "B" | "C" | "D",
-  "health_tips": "One sentence in casual Indonesian"
+  "health_tips": "One sentence in casual Indonesian",
+  "overall_confidence": number (0-100, overall confidence considering image quality and food clarity),
+  "reasoning_notes": ["Note about uncertainty", "Another observation"] (optional, list any assumptions)
 }
 
 CRITICAL RULES:
@@ -516,18 +533,23 @@ export interface FoodPlateAnalysis {
   food_name: string;
   category: 'Indonesian' | 'Western' | 'Asian' | 'Other' | 'Unknown';
   components?: string[]; // Legacy: simple string list (backward compat)
-  components_detailed?: FoodComponent[]; // NEW: detailed per-item nutrition
+  components_detailed?: FoodComponent[]; // Detailed per-item nutrition
   portion_estimate: string;
   calories: number;
+  calories_confidence?: number; // 0-100 per-field confidence
   protein_g: number;
+  protein_confidence?: number;
   carbs_g: number;
+  carbs_confidence?: number;
   fat_g: number;
+  fat_confidence?: number;
   sugar_g: number;
   sodium_mg?: number;
   health_grade: 'A' | 'B' | 'C' | 'D';
   health_tips: string;
   fun_fact: string;
   overall_confidence?: number; // 0-100% overall detection confidence
+  reasoning_notes?: string[]; // AI's notes about assumptions
   // Validation layer outputs (Phase 4)
   confidence?: 'high' | 'medium' | 'low'; // Validation confidence level
   confidenceLabel?: string; // Indonesian label ("Tinggi", "Sedang", "Rendah")

@@ -11,15 +11,19 @@ export const AI_TIMEOUT_MS = 8000;
 // Timeout for recipe generation (longer due to complexity)
 export const RECIPE_TIMEOUT_MS = 15000;
 
-export interface TimeoutResult<T> {
+export type TimeoutResultSuccess<T> = {
   success: true;
   data: T;
-} | {
+};
+
+export type TimeoutResultFailure = {
   success: false;
   reason: 'timeout' | 'error' | 'network';
   message: string;
   error?: Error;
 };
+
+export type TimeoutResult<T> = TimeoutResultSuccess<T> | TimeoutResultFailure;
 
 /**
  * Wrap an async function with timeout

@@ -4,6 +4,11 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { generateRecipesWithGroq, GroqRecipeResponse } from '@/lib/ai/groqClient';
 import { validateRecipeRequest, sanitizeIngredient } from '@/lib/ai/promptGuard';
+import { validateRecipe, getRecipeConfidenceLabel } from '@/lib/validation/recipeValidator';
+import { initializeKnowledgeBase } from '@/lib/knowledge';
+
+// Initialize knowledge base on first request
+let knowledgeInitialized = false;
 
 /**
  * POST /api/generate-recipe
@@ -12,6 +17,16 @@ import { validateRecipeRequest, sanitizeIngredient } from '@/lib/ai/promptGuard'
  */
 export async function POST(request: NextRequest) {
   try {
+    // Lazy initialize knowledge base
+    if (!knowledgeInitialized) {
+      try {
+        await initializeKnowledgeBase();
+        knowledgeInitialized = true;
+      } catch (e) {
+        console.warn('[API] Knowledge base init failed, continuing without validation');
+      }
+    }
+
     const { ingredients, budget, tools } = await request.json();
     
     // Validate budget
@@ -80,8 +95,51 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[API] ✅ Generated ${recipeResponse.recipes.length} recipe options`);
+
+    // === LAYER 3: RECIPE VALIDATION ===
+    const validatedRecipes = await Promise.all(
+      recipeResponse.recipes.map(async (recipe) => {
+        try {
+          const validation = await validateRecipe(
+            {
+              title: recipe.title,
+              totalCostRp: recipe.shopping_cost,
+              savingsVsBuyingRp: recipe.savings_vs_buying,
+              ingredients: recipe.missing_ingredients.map(ing => ({
+                item: ing.item,
+                qty: ing.qty,
+                price: ing.price,
+              })),
+              cookingSteps: recipe.cooking_steps,
+              calories: (recipe as any).calories,
+              protein: (recipe as any).protein,
+            },
+            toolsArray
+          );
+
+          const confidenceLabel = getRecipeConfidenceLabel(validation.confidence);
+
+          return {
+            ...recipe,
+            validation: {
+              confidence: validation.confidence,
+              confidenceLabel: confidenceLabel.label,
+              isValid: validation.isValid,
+              warnings: validation.warnings,
+            },
+          };
+        } catch (e) {
+          // If validation fails, return recipe without validation
+          console.warn('[API] Recipe validation failed for:', recipe.title, e);
+          return recipe;
+        }
+      })
+    );
     
-    return NextResponse.json(recipeResponse);
+    return NextResponse.json({
+      ...recipeResponse,
+      recipes: validatedRecipes,
+    });
   } catch (error: any) {
     console.error('[API] Recipe Generation Error:', error);
     

@@ -12,13 +12,23 @@ export interface SurvivalRecipe {
   savingsVsBuyingRp: number; // (Market Price of dish) - (TotalCost)
   calories: number;
   protein: number;
-  fat: number;       // NEW: grams of fat
-  carbs: number;     // NEW: grams of carbohydrates
+  fat: number;       // grams of fat
+  carbs: number;     // grams of carbohydrates
   ingredients: Ingredient[];
   steps: string[]; // Tailored for Rice Cooker / Basic Pan
   isRiceCookerOnly: boolean;
   toolsRequired?: string[]; // List of required tools
   generatedAt: Date;
+  recipeType?: 'Hemat' | 'Balance' | 'Premium'; // Recipe type from AI
+  exceeds_budget?: boolean; // Budget validation
+  budget_warning?: string; // Warning message
+  // Validation layer results (Phase 4)
+  validation?: {
+    confidence: 'high' | 'medium' | 'low';
+    confidenceLabel: string;
+    isValid: boolean;
+    warnings: string[];
+  };
 }
 
 /**

@@ -23,13 +23,13 @@ import { useProfile } from '@/lib/hooks/useProfile';
 import { useNavbar } from '@/lib/contexts/NavbarContext';
 import { supabase } from '@/lib/supabase/client';
 import { checkImageQuality, ImageQualityResult } from '@/lib/validation/imageQualityCheck';
+import { withTimeout, getFallbackMessage, AI_TIMEOUT_MS } from '@/lib/utils/timeoutWrapper';
 
 type PageState = 'mode_select' | 'camera' | 'quality_warning' | 'processing' | 'results' | 'fallback' | 'manual_entry' | 'error';
 type ScanStage = 'idle' | 'processing_vision' | 'complete' | 'error';
 type ScanMode = 'label' | 'plate'; // Mode 1: Label Decoder | Mode 2: Warteg Scanner
 
-// Timeout for AI analysis (8 seconds)
-const AI_TIMEOUT_MS = 8000;
+// AI_TIMEOUT_MS is imported from timeoutWrapper
 
 export default function ScanPage() {
   const router = useRouter();
@@ -47,7 +47,7 @@ export default function ScanPage() {
   // Reliability Layer States
   const [imageQuality, setImageQuality] = useState<ImageQualityResult | null>(null);
   const [isCheckingQuality, setIsCheckingQuality] = useState(false);
-  const [fallbackReason, setFallbackReason] = useState<'timeout' | 'low_quality' | 'api_error'>('timeout');
+  const [fallbackReason, setFallbackReason] = useState<'timeout' | 'low_quality' | 'api_error' | 'network' | 'error'>('timeout');
 
   // Hide/show navbar based on page state
   useEffect(() => {
@@ -199,28 +199,41 @@ export default function ScanPage() {
   };
 
   const handleFoodPlateAnalysisComplete = async () => {
-    try {
-      console.log('[ScanPage] Analyzing food plate with Gemini...');
+    console.log('[ScanPage] Analyzing food plate with Gemini (timeout: ' + AI_TIMEOUT_MS + 'ms)...');
 
-      const response = await fetch('/api/food-plate-analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageData: capturedImage }),
-      });
+    // Use timeout wrapper for AI call
+    const result = await withTimeout(
+      async () => {
+        const response = await fetch('/api/food-plate-analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageData: capturedImage }),
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze food plate');
-      }
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to analyze food plate');
+        }
 
-      const result: FoodPlateAnalysis = await response.json();
-      setFoodPlateResult(result);
+        return response.json() as Promise<FoodPlateAnalysis>;
+      },
+      AI_TIMEOUT_MS,
+      'Analisis makanan'
+    );
+
+    if (result.success) {
+      // AI analysis succeeded
+      setFoodPlateResult(result.data);
       setScanStage('complete');
       setPageState('results');
-    } catch (error: any) {
-      console.error('[ScanPage] Food plate analysis error:', error);
-      setErrorMessage(error.message || 'Gagal menganalisis makanan');
-      setPageState('error');
+    } else {
+      // Timeout or error - trigger fallback
+      console.warn('[ScanPage] AI analysis failed:', result.reason, result.message);
+      setFallbackReason(result.reason);
+      const fallbackInfo = getFallbackMessage(result.reason);
+      setErrorMessage(`${fallbackInfo.icon} ${fallbackInfo.title}: ${fallbackInfo.message}`);
+      setPageState('fallback'); // Go directly to fallback selector
+      toast.error(fallbackInfo.message);
     }
   };
 
