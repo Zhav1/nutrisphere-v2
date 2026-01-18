@@ -1,0 +1,4 @@
+<!-- Placeholder for 192x192 PWA icon -->
+<!-- Replace this file with actual icon image -->
+<!-- Recommended tools: Figma, Canva, or icon generators -->
+<!-- Icon should represent NutriSphere branding (green theme, nutrition-related) -->

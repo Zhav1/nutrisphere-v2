@@ -1,0 +1,169 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Glassmorphism Cards */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .glass-card-dark {
+    background: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .glass-card-medium {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+  }
+
+  /* Gradient Text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r;
+  }
+
+  .gradient-text-green {
+    @apply gradient-text from-green-400 to-emerald-600;
+  }
+
+  .gradient-text-neon {
+    @apply gradient-text from-neon-green to-green-600;
+  }
+
+  .gradient-text-sunset {
+    @apply gradient-text from-orange-400 via-pink-500 to-purple-600;
+  }
+
+  /* Button Interactions */
+  .btn-press {
+    @apply active:scale-95 transition-transform duration-100;
+  }
+
+  .btn-lift {
+    @apply hover:-translate-y-1 transition-transform duration-200;
+  }
+
+  .btn-glow-green {
+    @apply hover:shadow-glow-green transition-shadow duration-300;
+  }
+
+  /* Smooth Scrolling */
+  .scroll-smooth-custom {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #10b981;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #059669;
+}
+
+/* Camera Scanner Styles */
+.camera-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  /* Use dynamic viewport height for mobile browser compatibility */
+  background: black;
+  z-index: 50;
+  overflow: hidden;
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.capture-button {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: white;
+  border: 5px solid #10b981;
+  /* Green-500 */
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.capture-button:active {
+  transform: scale(0.95);
+}
+
+.capture-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* PWA-specific optimizations */
+@supports (display: standalone) {
+  .camera-container {
+    /* Account for notch on mobile */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Safe Area Utilities for Mobile Browsers */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Modal safe height - accounts for browser chrome */
+.modal-safe-height {
+  max-height: 85dvh;
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 60px);
+}
