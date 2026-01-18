@@ -528,6 +528,11 @@ export interface FoodPlateAnalysis {
   health_tips: string;
   fun_fact: string;
   overall_confidence?: number; // 0-100% overall detection confidence
+  // Validation layer outputs (Phase 4)
+  confidence?: 'high' | 'medium' | 'low'; // Validation confidence level
+  confidenceLabel?: string; // Indonesian label ("Tinggi", "Sedang", "Rendah")
+  validationWarnings?: string[]; // Warnings from validation layer
+  wasValidated?: boolean; // Whether validation was performed
 }
 
 /**

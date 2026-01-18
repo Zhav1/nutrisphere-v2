@@ -100,11 +100,41 @@ export default function FoodPlateResults({
                 </div>
               </div>
 
-              {/* Overall Confidence */}
-              {result.overall_confidence !== undefined && (
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="text-sm text-gray-500">AI Confidence:</span>
-                  <ConfidenceBadge confidence={result.overall_confidence} size="md" />
+              {/* Confidence Indicators */}
+              <div className="mt-3 space-y-2">
+                {/* Validation Confidence (from knowledge base) */}
+                {result.confidence && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-500">Validasi:</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${result.confidence === 'high' ? 'bg-green-100 text-green-700' :
+                        result.confidence === 'medium' ? 'bg-amber-100 text-amber-700' :
+                          'bg-red-100 text-red-700'
+                      }`}>
+                      {result.confidence === 'high' ? '✓ Tinggi' :
+                        result.confidence === 'medium' ? '⚠ Sedang' :
+                          '⚠ Rendah'}
+                    </span>
+                  </div>
+                )}
+
+                {/* AI Detection Confidence (from Gemini) */}
+                {result.overall_confidence !== undefined && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-500">AI Confidence:</span>
+                    <ConfidenceBadge confidence={result.overall_confidence} size="md" />
+                  </div>
+                )}
+              </div>
+
+              {/* Validation Warnings */}
+              {result.validationWarnings && result.validationWarnings.length > 0 && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs font-medium text-amber-700 mb-1">⚠ Peringatan:</p>
+                  <ul className="text-xs text-amber-600 space-y-0.5">
+                    {result.validationWarnings.map((warning, index) => (
+                      <li key={index}>• {warning}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>
